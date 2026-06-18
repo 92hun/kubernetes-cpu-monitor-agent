@@ -34,6 +34,7 @@ NODE_NAME=local PROC_ROOT=/proc go run .
 - runtime에는 바이너리만 포함
 - 가능하면 non-root
 - entrypoint는 CPU monitor 바이너리
+- `.dockerignore`로 개발 파일 제외
 
 검증:
 
@@ -89,6 +90,6 @@ PASS 후 `04-minikube-deploy-debug.md`만 읽는다.
 ```text
 Status: PASS
 Evidence: Linux container emitted 4.8%, 4.2%, 9.2%, 5.3% at 5-second intervals and exited on Ctrl+C; image sha256:7030ca... is linux/arm64; client dry-run succeeded; go test and go vet exit 0
-Changed files: Dockerfile, agent.yaml, plans/03-app-container-manifest.md
+Changed files: Dockerfile, .dockerignore, agent.yaml, docs/ai-workflow/03-app-container-manifest.md
 Next: Plan 04 실행
 ```

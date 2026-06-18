@@ -69,6 +69,9 @@ go test ./... -run TestCalculateCPUUsage -v
 - [x] `time.NewTicker(5 * time.Second)` 사용
 - [x] 소수점 한 자리 stdout 로그
 - [x] SIGINT와 SIGTERM 종료
+- [x] 실행 루프의 sample 오류 복구와 stdout 출력 테스트
+- [x] 초기 sample 실패 시 non-zero 종료
+- [x] 고정 의존성을 `cpuMonitor`에 묶고 1회 측정과 반복 제어 분리
 
 코드 변경 전 테스트 가능한 로직의 실패 테스트를 먼저 작성한다.
 
@@ -100,7 +103,7 @@ PASS 후 `03-app-container-manifest.md`만 읽는다.
 
 ```text
 Status: PASS
-Evidence: Parser, Delta, env, and format tests observed RED then GREEN; go test, go vet, go build exit 0; go list -m all shows only cpu-monitor
+Evidence: Parser, Delta, env, format, monitor loop, error recovery, and exit-code tests observed RED then GREEN; go test, go vet, go build exit 0; go list -m all shows only cpu-monitor
 Changed files: go.mod, main.go, main_test.go
 Next: Plan 03 실행
 ```

@@ -8,7 +8,6 @@
 
 ## Read First
 
-- `../AGENTS.md`
 - 이 파일만 읽는다. 이후 계획 파일은 PASS 후 읽는다.
 
 ## Technical Contract
@@ -27,13 +26,13 @@ Usage = (TotalDelta - IdleDelta) / TotalDelta * 100
 예정 인터페이스:
 
 ```go
-type CPUStat struct {
+type cpuStat struct {
     Idle  uint64
     Total uint64
 }
 
-func readCPUStat(procRoot string) (CPUStat, error)
-func calculateCPUUsage(previous, current CPUStat) (float64, error)
+func readCPUStat(procRoot string) (cpuStat, error)
+func calculateCPUUsage(previous, current cpuStat) (float64, error)
 ```
 
 예정 파일:
@@ -88,6 +87,6 @@ PASS 후 `02-go-core-tdd.md`만 읽는다.
 ```text
 Status: PASS
 Evidence: Docker Desktop server 27.4.0; Minikube host/kubelet/apiserver Running; node minikube Ready on Kubernetes v1.35.1
-Changed files: ANALYSIS_AND_PLAN.md, AGENTS.md, plans/01-05
+Changed files: docs/ai-workflow/01-05
 Next: Plan 02 실행
 ```

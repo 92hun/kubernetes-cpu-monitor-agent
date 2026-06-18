@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnvOrDefault(t *testing.T) {
@@ -44,7 +49,7 @@ func TestReadCPUStat(t *testing.T) {
 		t.Fatalf("readCPUStat() error = %v", err)
 	}
 
-	want := CPUStat{Idle: 410, Total: 573}
+	want := cpuStat{Idle: 410, Total: 573}
 	if got != want {
 		t.Fatalf("readCPUStat() = %+v, want %+v", got, want)
 	}
@@ -66,9 +71,23 @@ func TestReadCPUStatRejectsInvalidNumber(t *testing.T) {
 	}
 }
 
+func TestReadCPUStatRejectsNonAggregateCPUFirstLine(t *testing.T) {
+	root := writeStatFile(t, "cpu0  1 2 3 4 5 6 7 8\n")
+
+	if _, err := readCPUStat(root); err == nil {
+		t.Fatal("readCPUStat() error = nil, want aggregate CPU line error")
+	}
+}
+
+func TestReadCPUStatReturnsMissingFileError(t *testing.T) {
+	if _, err := readCPUStat(t.TempDir()); err == nil {
+		t.Fatal("readCPUStat() error = nil, want missing file error")
+	}
+}
+
 func TestCalculateCPUUsage(t *testing.T) {
-	previous := CPUStat{Idle: 600, Total: 1000}
-	current := CPUStat{Idle: 650, Total: 1200}
+	previous := cpuStat{Idle: 600, Total: 1000}
+	current := cpuStat{Idle: 650, Total: 1200}
 
 	got, err := calculateCPUUsage(previous, current)
 	if err != nil {
@@ -80,24 +99,210 @@ func TestCalculateCPUUsage(t *testing.T) {
 }
 
 func TestCalculateCPUUsageRejectsZeroDelta(t *testing.T) {
-	stat := CPUStat{Idle: 600, Total: 1000}
+	stat := cpuStat{Idle: 600, Total: 1000}
 	if _, err := calculateCPUUsage(stat, stat); err == nil {
 		t.Fatal("calculateCPUUsage() error = nil, want zero delta error")
 	}
 }
 
 func TestCalculateCPUUsageRejectsDecreasingCounters(t *testing.T) {
-	previous := CPUStat{Idle: 600, Total: 1000}
-	current := CPUStat{Idle: 500, Total: 900}
+	previous := cpuStat{Idle: 600, Total: 1000}
+	current := cpuStat{Idle: 500, Total: 900}
 	if _, err := calculateCPUUsage(previous, current); err == nil {
 		t.Fatal("calculateCPUUsage() error = nil, want decreasing counter error")
 	}
 }
 
 func TestCalculateCPUUsageRejectsIdleDeltaAboveTotalDelta(t *testing.T) {
-	previous := CPUStat{Idle: 600, Total: 1000}
-	current := CPUStat{Idle: 800, Total: 1100}
+	previous := cpuStat{Idle: 600, Total: 1000}
+	current := cpuStat{Idle: 800, Total: 1100}
 	if _, err := calculateCPUUsage(previous, current); err == nil {
 		t.Fatal("calculateCPUUsage() error = nil, want invalid delta error")
+	}
+}
+
+func TestMonitorReturnsInitialSampleError(t *testing.T) {
+	wantErr := errors.New("read failed")
+	reader := func(string) (cpuStat, error) {
+		return cpuStat{}, wantErr
+	}
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &bytes.Buffer{},
+		stderr:   &bytes.Buffer{},
+	}
+
+	err := monitor.monitor(context.Background(), nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("monitor() error = %v, want wrapped %v", err, wantErr)
+	}
+}
+
+func TestMonitorWritesUsageForTick(t *testing.T) {
+	stats := []cpuStat{
+		{Idle: 600, Total: 1000},
+		{Idle: 650, Total: 1200},
+	}
+	call := 0
+	reader := func(string) (cpuStat, error) {
+		stat := stats[call]
+		call++
+		return stat, nil
+	}
+	ticks := make(chan time.Time, 1)
+	ticks <- time.Now()
+	close(ticks)
+	var stdout bytes.Buffer
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &stdout,
+		stderr:   &bytes.Buffer{},
+	}
+
+	if err := monitor.monitor(context.Background(), ticks); err != nil {
+		t.Fatalf("monitor() error = %v", err)
+	}
+	if got, want := stdout.String(), "[Host: node-a] CPU: 75.0%\n"; got != want {
+		t.Fatalf("monitor() output = %q, want %q", got, want)
+	}
+}
+
+func TestMonitorStopsWhenContextIsCanceled(t *testing.T) {
+	reader := func(string) (cpuStat, error) {
+		return cpuStat{Idle: 600, Total: 1000}, nil
+	}
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &bytes.Buffer{},
+		stderr:   &bytes.Buffer{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := monitor.monitor(ctx, nil); err != nil {
+		t.Fatalf("monitor() error = %v, want nil", err)
+	}
+}
+
+func TestMonitorStopsWhenTicksClose(t *testing.T) {
+	reader := func(string) (cpuStat, error) {
+		return cpuStat{Idle: 600, Total: 1000}, nil
+	}
+	ticks := make(chan time.Time)
+	close(ticks)
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &bytes.Buffer{},
+		stderr:   &bytes.Buffer{},
+	}
+
+	if err := monitor.monitor(context.Background(), ticks); err != nil {
+		t.Fatalf("monitor() error = %v, want nil", err)
+	}
+}
+
+func TestMonitorLogsSampleErrorAndContinues(t *testing.T) {
+	readErr := errors.New("temporary read failure")
+	results := []struct {
+		stat cpuStat
+		err  error
+	}{
+		{stat: cpuStat{Idle: 600, Total: 1000}},
+		{err: readErr},
+		{stat: cpuStat{Idle: 650, Total: 1200}},
+	}
+	call := 0
+	reader := func(string) (cpuStat, error) {
+		result := results[call]
+		call++
+		return result.stat, result.err
+	}
+	ticks := make(chan time.Time, 2)
+	ticks <- time.Now()
+	ticks <- time.Now()
+	close(ticks)
+	var stdout, stderr bytes.Buffer
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &stdout,
+		stderr:   &stderr,
+	}
+
+	if err := monitor.monitor(context.Background(), ticks); err != nil {
+		t.Fatalf("monitor() error = %v", err)
+	}
+	if !strings.Contains(stderr.String(), readErr.Error()) {
+		t.Fatalf("monitor() stderr = %q, want read error", stderr.String())
+	}
+	if got, want := stdout.String(), "[Host: node-a] CPU: 75.0%\n"; got != want {
+		t.Fatalf("monitor() output = %q, want %q", got, want)
+	}
+}
+
+func TestMonitorLogsCalculationErrorAndContinues(t *testing.T) {
+	stats := []cpuStat{
+		{Idle: 600, Total: 1000},
+		{Idle: 600, Total: 1000},
+		{Idle: 650, Total: 1200},
+	}
+	call := 0
+	reader := func(string) (cpuStat, error) {
+		stat := stats[call]
+		call++
+		return stat, nil
+	}
+	ticks := make(chan time.Time, 2)
+	ticks <- time.Now()
+	ticks <- time.Now()
+	close(ticks)
+	var stdout, stderr bytes.Buffer
+	monitor := cpuMonitor{
+		read:     reader,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &stdout,
+		stderr:   &stderr,
+	}
+
+	if err := monitor.monitor(context.Background(), ticks); err != nil {
+		t.Fatalf("monitor() error = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "CPU usage calculation failed") {
+		t.Fatalf("monitor() stderr = %q, want calculation error", stderr.String())
+	}
+	if got, want := stdout.String(), "[Host: node-a] CPU: 75.0%\n"; got != want {
+		t.Fatalf("monitor() output = %q, want %q", got, want)
+	}
+}
+
+func TestRunRejectsNonPositiveInterval(t *testing.T) {
+	monitor := cpuMonitor{
+		read:     readCPUStat,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   &bytes.Buffer{},
+		stderr:   &bytes.Buffer{},
+	}
+
+	err := monitor.run(context.Background(), 0)
+	if err == nil {
+		t.Fatal("run() error = nil, want invalid interval error")
+	}
+}
+
+func TestRunMainReturnsFailureWhenInitialSampleFails(t *testing.T) {
+	t.Setenv("PROC_ROOT", t.TempDir())
+	if got := runMain(&bytes.Buffer{}, &bytes.Buffer{}); got != 1 {
+		t.Fatalf("runMain() = %d, want 1", got)
 	}
 }

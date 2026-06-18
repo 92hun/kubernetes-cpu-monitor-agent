@@ -44,13 +44,13 @@ kubectl logs -l app=cpu-monitoring -n whatap --tail=5
 
 확인:
 
-- [ ] desired/current/ready가 노드 수와 일치
-- [ ] Pod Running
-- [ ] Pod NODE와 로그 Host 일치
-- [ ] 5초 간격 로그
-- [ ] CPU 0.0~100.0
-- [ ] `PROC_ROOT=/host/proc`
-- [ ] `/host/proc/stat` 접근 가능
+- [x] desired/current/ready가 노드 수와 일치
+- [x] Pod Running
+- [x] Pod NODE와 로그 Host 일치
+- [x] 5초 간격 로그
+- [x] CPU 0.0~100.0
+- [x] `PROC_ROOT=/host/proc`
+- [x] `/host/proc/stat` 접근 가능
 
 ## Debugging Contract
 
@@ -84,9 +84,8 @@ PASS 후 `05-review-submit.md`만 읽는다.
 ## Result
 
 ```text
-Status: NOT_STARTED
-Evidence:
-Changed files:
-Next: Plan 04 실행
+Status: PASS
+Evidence: Improved image sha256:d4bd0908... linux/arm64; DaemonSet rollout successful; desired/current/ready 1/1/1; Pod Running with 0 restarts on minikube; host /proc mounted read-only; CPU logs verified
+Changed files: Dockerfile, agent.yaml
+Next: Plan 05 실행
 ```
-
