@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,6 +40,16 @@ func writeStatFile(t *testing.T, content string) string {
 		t.Fatalf("write stat fixture: %v", err)
 	}
 	return dir
+}
+
+func newTestMonitor(read cpuReader, stdout, stderr io.Writer) cpuMonitor {
+	return cpuMonitor{
+		read:     read,
+		procRoot: "/proc",
+		nodeName: "node-a",
+		stdout:   stdout,
+		stderr:   stderr,
+	}
 }
 
 func TestReadCPUStat(t *testing.T) {
@@ -126,13 +137,7 @@ func TestMonitorReturnsInitialSampleError(t *testing.T) {
 	reader := func(string) (cpuStat, error) {
 		return cpuStat{}, wantErr
 	}
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &bytes.Buffer{},
-		stderr:   &bytes.Buffer{},
-	}
+	monitor := newTestMonitor(reader, &bytes.Buffer{}, &bytes.Buffer{})
 
 	err := monitor.monitor(context.Background(), nil)
 	if !errors.Is(err, wantErr) {
@@ -155,13 +160,7 @@ func TestMonitorWritesUsageForTick(t *testing.T) {
 	ticks <- time.Now()
 	close(ticks)
 	var stdout bytes.Buffer
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &stdout,
-		stderr:   &bytes.Buffer{},
-	}
+	monitor := newTestMonitor(reader, &stdout, &bytes.Buffer{})
 
 	if err := monitor.monitor(context.Background(), ticks); err != nil {
 		t.Fatalf("monitor() error = %v", err)
@@ -175,13 +174,7 @@ func TestMonitorStopsWhenContextIsCanceled(t *testing.T) {
 	reader := func(string) (cpuStat, error) {
 		return cpuStat{Idle: 600, Total: 1000}, nil
 	}
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &bytes.Buffer{},
-		stderr:   &bytes.Buffer{},
-	}
+	monitor := newTestMonitor(reader, &bytes.Buffer{}, &bytes.Buffer{})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -196,13 +189,7 @@ func TestMonitorStopsWhenTicksClose(t *testing.T) {
 	}
 	ticks := make(chan time.Time)
 	close(ticks)
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &bytes.Buffer{},
-		stderr:   &bytes.Buffer{},
-	}
+	monitor := newTestMonitor(reader, &bytes.Buffer{}, &bytes.Buffer{})
 
 	if err := monitor.monitor(context.Background(), ticks); err != nil {
 		t.Fatalf("monitor() error = %v, want nil", err)
@@ -230,13 +217,7 @@ func TestMonitorLogsSampleErrorAndContinues(t *testing.T) {
 	ticks <- time.Now()
 	close(ticks)
 	var stdout, stderr bytes.Buffer
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &stdout,
-		stderr:   &stderr,
-	}
+	monitor := newTestMonitor(reader, &stdout, &stderr)
 
 	if err := monitor.monitor(context.Background(), ticks); err != nil {
 		t.Fatalf("monitor() error = %v", err)
@@ -266,13 +247,7 @@ func TestMonitorLogsCalculationErrorAndContinues(t *testing.T) {
 	ticks <- time.Now()
 	close(ticks)
 	var stdout, stderr bytes.Buffer
-	monitor := cpuMonitor{
-		read:     reader,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &stdout,
-		stderr:   &stderr,
-	}
+	monitor := newTestMonitor(reader, &stdout, &stderr)
 
 	if err := monitor.monitor(context.Background(), ticks); err != nil {
 		t.Fatalf("monitor() error = %v", err)
@@ -286,13 +261,7 @@ func TestMonitorLogsCalculationErrorAndContinues(t *testing.T) {
 }
 
 func TestRunRejectsNonPositiveInterval(t *testing.T) {
-	monitor := cpuMonitor{
-		read:     readCPUStat,
-		procRoot: "/proc",
-		nodeName: "node-a",
-		stdout:   &bytes.Buffer{},
-		stderr:   &bytes.Buffer{},
-	}
+	monitor := newTestMonitor(readCPUStat, &bytes.Buffer{}, &bytes.Buffer{})
 
 	err := monitor.run(context.Background(), 0)
 	if err == nil {

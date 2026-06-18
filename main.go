@@ -17,9 +17,11 @@ const (
 	defaultProcRoot = "/proc"
 	defaultNodeName = "unknown"
 	sampleInterval  = 5 * time.Second
-	cpuFieldCount   = 8
-	cpuIdleIndex    = 3
-	cpuIOWaitIndex  = 4
+
+	// guest와 guest_nice는 앞선 필드에 포함되므로 8개 필드만 사용한다.
+	cpuFieldCount  = 8
+	cpuIdleIndex   = 3
+	cpuIOWaitIndex = 4
 )
 
 type cpuStat struct {
@@ -95,7 +97,7 @@ func formatCPUUsage(nodeName string, usage float64) string {
 	return fmt.Sprintf("[Host: %s] CPU: %.1f%%", nodeName, usage)
 }
 
-func (m cpuMonitor) collect(previous cpuStat) cpuStat {
+func (m cpuMonitor) sampleAndReport(previous cpuStat) cpuStat {
 	current, err := m.read(m.procRoot)
 	if err != nil {
 		fmt.Fprintf(m.stderr, "CPU sample failed: %v\n", err)
@@ -126,7 +128,7 @@ func (m cpuMonitor) monitor(ctx context.Context, ticks <-chan time.Time) error {
 			if !ok {
 				return nil
 			}
-			previous = m.collect(previous)
+			previous = m.sampleAndReport(previous)
 		}
 	}
 }

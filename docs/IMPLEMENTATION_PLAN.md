@@ -38,7 +38,7 @@ func calculateCPUUsage(previous, current cpuStat) (float64, error)
 - `calculateCPUUsage`: 두 샘플의 Delta 계산
 - `envOrDefault`: 환경 변수 기본값 처리
 - `formatCPUUsage`: 출력 형식 고정
-- `collect`: 한 번의 CPU 읽기, 계산, stdout/stderr 출력
+- `sampleAndReport`: 한 번의 CPU 읽기, 계산, stdout/stderr 출력
 - `monitor`: 종료 신호와 tick에 따른 반복 제어
 - `run`: 5초 ticker의 생성과 수명 관리
 - `runMain`: 환경 변수, 종료 시그널, process exit code 결정
